@@ -2,32 +2,95 @@ import sys
 import math
 import random
 
+class Robot(object):
+    def __init__(self,row,col,item):
+        self.row, self.col = row, col
+        self.item = item
+        self.orderkind = ""
+        self.destrow, self.destcol = -1, -1
+        self.request_item = "RADAR"
+        self.orderpriority = 10
+
+    def update(self, row, col, item):
+        self.row, self.col = row, col
+        self.item = item
+
+    def dig(self, row, col, priority):
+        self.orderkind = "DIG"
+        self.destrow, self.destcol = row, col
+        self.orderpriority = priority
+        if abs(self.row - self.destrow) + abs(self.col - self.destcol) > 1: raise ValueError("cant dig. too far")
+    
+    def move(self,row,col, priority):
+        self.orderkind = "MOVE"
+        self.destrow, self.destcol = row, col
+        self.orderpriority = priority
+    
+    def home(self):
+        self.orderkind = "MOVE"
+        self.destrow, self.destcol = self.row, 0
+        self.orderpriority = 100
+
+    def request(self, request_item, priority):
+        self.orderkind = "REQUEST"
+        self.request_item = request_item
+        self.orderpriority = priority
+    
+
+class Cell(object):
+    def __init__(self):
+        self.inRadarRange = False
+        self.hasownTrap = False
+        self.numofOre = -1 #-1 for unknown
+        self.hole = False
+        self.diggedbyme = False
+        self.wasOre = False
+
+        # vague info estimated opponent move
+        self.RadarPossibility = 0
+        self.TrapPossibility = 0
+        self.OrePossibility = 0
+
+def printorder(robot):
+    if robot.orderkind == "REQUEST":
+        print(robot.orderkind + " " + robot.request_item)
+    else:
+        print(robot.orderkind + " " + str(robot.destcol) + " " + str(robot.destrow))
+
 def distance(cur_point, target_point):
     return abs(cur_point[0] - target_point[0]) + abs(cur_point[1] - target_point[1])
 
+def distance(robotrow, robotcol, cellrow, cellcol):
+    return abs(robotrow - cellrow) + abs(robotcol - cellcol)
+
 # height: size of the map
-widths, heights = [int(i) for i in input().split()]
-field = [[[-1,-1,-1,-1] for w in range(widths)] for h in range(heights)] # field info. [isinradar, istrap, #ofore, diggedbyme]
-myrobots = [[[],-1,[-1,-1,-1],-1] for _ in range(5)]  # [[row,col], item, [orderkind, targetrow,targetcol], orderpriority]
-order = [["",-1,-1] for _ in range(5)] # MOVE row col | DIG row col | REQUEST
+ncol, nrow = [int(i) for i in input().split()]
+field = [[Cell() for col in range(ncol)] for row in range(nrow)]
+myrobots = [Robot(-1,-1,-1) for _ in range(5)]
+
+    # field = [[[-1,-1,-1,-1] for w in range(widths)] for h in range(heights)] # field info. [isinradar, istrap, #ofore, diggedbyme]
+    # myrobots = [[[],-1,[-1,-1,-1],-1] for _ in range(5)]  # [[row,col], item, [orderkind, targetrow,targetcol], orderpriority]
+    # order = [["",-1,-1] for _ in range(5)] # MOVE row col | DIG row col | REQUEST
+
 # game loop
 loop = 0
 
 # first four turn
-for initial in range(4):
+for initial in range(3):
     my_score, opponent_score = [int(i) for i in input().split()]
 
-    for height in range(heights):
+    for row in range(nrow):
         inputs = input().split()
-        for width in range(widths):
+        for col in range(ncol):
             # ore: amount of ore or "?" if unknown
             # hole: 1 if cell has a hole
-            num_of_ore = inputs[2*width]
-            ishole = int(inputs[2*width+1])
+            num_of_ore = inputs[2*col]
+            ishole = int(inputs[2*col+1])
 
-            # update field
-            field[height][width][2] = '?' if num_of_ore == '?' else int(num_of_ore)
-            #field[height][width][3] = 0 if num_of_ore == '0' else field[height][width][3]  # undigged:-1, was empty:0, ore found in the past:1
+            # update
+            if num_of_ore != '?':
+                field[row][col].numofOre = int(num_of_ore)
+            field[row][col].hole = bool(ishole)
         
     entity_count, radar_cooldown, trap_cooldown = [int(i) for i in input().split()]
     for i in range(entity_count):
@@ -39,67 +102,60 @@ for initial in range(4):
 
         if type == 0:
             id %= 5
-            myrobots[id][0] = [row, col]
-            myrobots[id][1] = item
+            robot = myrobots[id]
+            robot.update(row, col, item)
 
-            # detect digging ore
-            if item == 4 and order[id][0] == "DIG":
-                field[order[id][1]][order[id][2]][3] = 1
-            # digged but empty
-            elif order[id][0] == "DIG" and distance(myrobots[id][0], [order[id][1],order[id][2]]) < 2:
-                field[order[id][1]][order[id][2]][3] = 0
-        
+            if robot.orderkind == "DIG":
+                field[robot.destrow][robot.destcol].diggedbyme = True
+                if item == 4:
+                    field[robot.destrow][robot.destcol].wasOre = True
+
     if loop == 0:
-        for i in range(5):
-            order[i][0] = "MOVE" # "MOVE row col"
-            order[i][1], order[i][2] = myrobots[i][0][0], 4
-        order[2] = ["REQUEST", "RADAR", -1]
+        nearest_dist, nearest_robot_idx = 5, 0
+        for robot_idx in range(5):
+            robot = myrobots[robot_idx]
+            print("raobot_idx, row, col, nearest_dist ", robot_idx, robot.row, robot.col, nearest_dist, file=sys.stderr)
+            robot.move(robot.row, robot.col+4, 10)
+            if abs(4 - robot.row) < nearest_dist:
+                nearest_dist = abs(4-robot.row)
+                nearest_robot_idx = robot_idx
+        myrobots[nearest_robot_idx].request("RADAR", 90)
     elif loop == 1:
-        for i in range(5):
-            if myrobots[i][1] == 2:
-                order[i][0] = "MOVE"
-                order[i][1], order[i][2] = 4, 5
+        for robot_idx in range(5):
+            robot = myrobots[robot_idx]
+            if robot.item ==2:
+                robot.move(robot.row, robot.col+4, 90)
             else:
-                order[i][0] = "DIG" # dig right
-                order[i][1], order[i][2] = myrobots[i][0][0], 5
+                robot.dig(robot.row, robot.col+1, 10)
+
     elif loop == 2:
-        for i in range(5):
-            if myrobots[i][1] == 2:
-                order[i][0] = "DIG"
-                order[i][1], order[i][2] = 4, 5
-            elif myrobots[i][1] == 4:
-                order[i][0] = "MOVE"
-                order[i][1], order[i][2] = myrobots[i][0][0], 0
-                myrobots[i][3] = 90
+        for robot_idx in range(5):
+            robot = myrobots[robot_idx]
+            if robot.item ==2:
+                robot.dig(robot.row, robot.col+1, 90)
+            elif robot.item == 4:
+                robot.home()
             else:
-                order[i][0] = "MOVE"
-                order[i][1], order[i][2] = myrobots[i][0][0], myrobots[i][0][1]+2
-    elif loop == 3:
-        for i in range(5):
-            if myrobots[i][1] == 2:
-                order[i][0] = "DIG"
-                order[i][1], order[i][2] = 4, 5
-                myrobots[i][3] = 10
-            elif myrobots[i][1] == 4:
-                order[i][0] = "MOVE"
-                order[i][1], order[i][2] = myrobots[i][0][0], 0
-                myrobots[i][3] = 90
-            elif myrobots[i][0][1] < 4:
-                order[i][0] = "MOVE"
-                order[i][1], order[i][2] = myrobots[i][0][0]+1, myrobots[i][0][1]+3
-                myrobots[i][3] = 10
-            else:
-                order[i][0] = "DIG"
-                order[i][1], order[i][2] = myrobots[i][0][0], myrobots[i][0][1]+1
-                myrobots[i][3] = 10
-    
+                # if anyone found ore, try to go there
+                robot.dig(robot.row, robot.col-1, 10)
+
     #print order
-    for i in range(5):
-        if order[i][0] == "REQUEST":
-            print(order[i][0] + " " + order[i][1])
-        else:
-            print(order[i][0] + " " + str(order[i][2]) + " " + str(order[i][1]))
+    for robot_idx in range(5):
+        printorder(myrobots[robot_idx])
     loop += 1
+
+    
+    # set order
+    for robot:
+        if item == 4:
+            robot.order = backhome
+    # set request radar for only one robot if condition is satisfied
+    radar_taken = 0
+    if condition:
+        for robot:
+            if condition:
+                radar_taken = 1
+                set radar order
 
 radar_put_place = [[10,8],[1,11],[8,2],[6,13],[10,18],[3,19], [7,23]]
 previous_radar_num = 0
@@ -107,13 +163,13 @@ while True:
     # my_score: Amount of ore delivered
     my_score, opponent_score = [int(i) for i in input().split()]
     ore_this_turn = []
-    for height in range(heights):
+    for height in range(nrow):
         inputs = input().split()
-        for width in range(widths):
+        for col in range(ncol):
             # ore: amount of ore or "?" if unknown
             # hole: 1 if cell has a hole
-            num_of_ore = inputs[2*width]
-            ishole = int(inputs[2*width+1])
+            num_of_ore = inputs[2*col]
+            ishole = int(inputs[2*col+1])
 
             # update field
             if num_of_ore == '?':
@@ -122,8 +178,8 @@ while True:
             field[height][width][2] = int(num_of_ore)
             # field[height][width][3] = 0 if num_of_ore == '0' else field[height][width][3]  # undigged:-1, was empty:0, ore found in the past:1
 
-            if field[height][width][2] > 0:  #and field[height][width][1]==-1
-                ore_this_turn.append([[height, width],int(num_of_ore)])
+            if field[height][col][2] > 0:  #and field[height][col][1]==-1
+                ore_this_turn.append([[height, col],int(num_of_ore)])
         
     # entity_count: number of entities visible to you
     # radar_cooldown: turns left until a new radar can be requested
