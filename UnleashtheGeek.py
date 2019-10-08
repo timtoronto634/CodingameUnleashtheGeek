@@ -2,18 +2,30 @@ import sys
 import math
 import random
 
+from collections import deque
+
+def debug(strs, *vars):
+    print(strs, *vars, file=sys.stderr)
+
 class Robot(object):
-    def __init__(self,row,col,item):
+    def __init__(self, row, col, item):
         self.row, self.col = row, col
         self.item = item
+    
+    def update(self, row, col, item):
+        self.row, self.col = row, col
+        self.item = item
+
+class MyRobot(Robot):
+    def __init__(self,row,col,item):
+        super().__init__(row, col, item)
         self.orderkind = ""
         self.destrow, self.destcol = -1, -1
         self.request_item = "RADAR"
         self.orderpriority = 10
 
     def update(self, row, col, item):
-        self.row, self.col = row, col
-        self.item = item
+        return super().update(row, col, item)
 
     def dig(self, row, col, priority):
         self.orderkind = "DIG"
@@ -29,14 +41,42 @@ class Robot(object):
     def home(self):
         self.orderkind = "MOVE"
         self.destrow, self.destcol = self.row, 0
-        self.orderpriority = 100
+        self.orderpriority = 90
 
     def request(self, request_item, priority):
         self.orderkind = "REQUEST"
         self.request_item = request_item
         self.orderpriority = priority
-    
 
+    def printorder(self):
+        if self.orderkind == "REQUEST":
+            print(self.orderkind + " " + self.request_item)
+        else:
+            print(self.orderkind + " " + str(self.destcol) + " " + str(self.destrow))
+
+class EnemyRobot(Robot):
+    def __init__(self, row, col, item):
+        super().__init__(row, col, item)
+        self.prerow = -1
+        self.precol = -1
+        self.preitem = -1
+    
+    def update(self, row, col, item):
+        self.prerow = self.row
+        self.precol = self.col
+        self.preitem = self.item
+        return super().update(row, col, item)
+
+    def status(self):
+        if self.item != self.preitem:
+            if self.preitem == 2:
+                return 2
+            elif self.preitem == 3:
+                return 3
+            elif self.item == 4:
+                return 4
+        return 0
+    
 class Cell(object):
     def __init__(self):
         self.inRadarRange = False
@@ -51,22 +91,44 @@ class Cell(object):
         self.TrapPossibility = 0
         self.OrePossibility = 0
 
-def printorder(robot):
-    if robot.orderkind == "REQUEST":
-        print(robot.orderkind + " " + robot.request_item)
-    else:
-        print(robot.orderkind + " " + str(robot.destcol) + " " + str(robot.destrow))
+"""
+priority:
+    100 : request radar and put radar when short
+     90 : bring ore back
+     80 : dig
 
-def distance(cur_point, target_point):
-    return abs(cur_point[0] - target_point[0]) + abs(cur_point[1] - target_point[1])
+     70 : break opponents radar with 0 or 1 move
+
+     50: go to ore place from radar with 1 move
+     40: go to ore place from radar with n move (-n+1 priority)
+
+     35: dig ore place from wasore
+     30: go to ore place from wasore with n move (-n+1 priority)
+
+     20: random dig
+     10: nothing
+
+enemy status:
+    0: no need to worry
+    2: just put radar
+    3: just put trap
+    4: just got ore
+"""
 
 def distance(robotrow, robotcol, cellrow, cellcol):
     return abs(robotrow - cellrow) + abs(robotcol - cellcol)
 
+def nextplace_to_put_radar(tempi):
+    temp = [[10,8],[1,11],[8,2],[6,13],[10,18],[3,19], [7,23]]
+    if tempi >= len(temp):
+        return [random.randint(4,10), random.randint(25,29)]
+    return temp[tempi]
+
 # height: size of the map
 ncol, nrow = [int(i) for i in input().split()]
 field = [[Cell() for col in range(ncol)] for row in range(nrow)]
-myrobots = [Robot(-1,-1,-1) for _ in range(5)]
+myrobots = [MyRobot(-1,-1,-1) for _ in range(5)]
+enemies = [EnemyRobot(-1,-1,-1) for _ in range(5)]
 
     # field = [[[-1,-1,-1,-1] for w in range(widths)] for h in range(heights)] # field info. [isinradar, istrap, #ofore, diggedbyme]
     # myrobots = [[[],-1,[-1,-1,-1],-1] for _ in range(5)]  # [[row,col], item, [orderkind, targetrow,targetcol], orderpriority]
@@ -75,7 +137,7 @@ myrobots = [Robot(-1,-1,-1) for _ in range(5)]
 # game loop
 loop = 0
 
-# first four turn
+# first three turn
 for initial in range(3):
     my_score, opponent_score = [int(i) for i in input().split()]
 
@@ -109,6 +171,12 @@ for initial in range(3):
                 field[robot.destrow][robot.destcol].diggedbyme = True
                 if item == 4:
                     field[robot.destrow][robot.destcol].wasOre = True
+        
+        elif type == 1:
+            id %= 5
+            robot = enemies[id]
+            robot.update(row, col, item)
+
 
     if loop == 0:
         nearest_dist, nearest_robot_idx = 5, 0
@@ -141,29 +209,15 @@ for initial in range(3):
 
     #print order
     for robot_idx in range(5):
-        printorder(myrobots[robot_idx])
+        myrobots[robot_idx].printorder()
     loop += 1
 
-    
-    # set order
-    for robot:
-        if item == 4:
-            robot.order = backhome
-    # set request radar for only one robot if condition is satisfied
-    radar_taken = 0
-    if condition:
-        for robot:
-            if condition:
-                radar_taken = 1
-                set radar order
-
-radar_put_place = [[10,8],[1,11],[8,2],[6,13],[10,18],[3,19], [7,23]]
-previous_radar_num = 0
+tempi = 0 # temporal for radar put place
 while True:
     # my_score: Amount of ore delivered
     my_score, opponent_score = [int(i) for i in input().split()]
     ore_this_turn = []
-    for height in range(nrow):
+    for row in range(nrow):
         inputs = input().split()
         for col in range(ncol):
             # ore: amount of ore or "?" if unknown
@@ -172,20 +226,13 @@ while True:
             ishole = int(inputs[2*col+1])
 
             # update field
-            if num_of_ore == '?':
-                continue
-
-            field[height][width][2] = int(num_of_ore)
-            # field[height][width][3] = 0 if num_of_ore == '0' else field[height][width][3]  # undigged:-1, was empty:0, ore found in the past:1
-
-            if field[height][col][2] > 0:  #and field[height][col][1]==-1
-                ore_this_turn.append([[height, col],int(num_of_ore)])
+            if num_of_ore != '?':
+                field[row][col].numofOre = int(num_of_ore)
+            field[row][col].hole = bool(ishole)
         
     # entity_count: number of entities visible to you
     # radar_cooldown: turns left until a new radar can be requested
     # trap_cooldown: turns left until a new trap can be requested
-    ore_this_turn.sort(key=lambda x:x[0][1])
-    print("all ore", ore_this_turn, file=sys.stderr)
     entity_count, radar_cooldown, trap_cooldown = [int(i) for i in input().split()]
     radar_taken, radar_num = 0, 0
     for i in range(entity_count):
@@ -195,104 +242,84 @@ while True:
         # item: if this entity is a robot, the item it is carrying (-1 for NONE, 2 for RADAR, 3 for TRAP, 4 for ORE)
         id, type, col, row, item = [int(j) for j in input().split()]
 
-        if type==2:
+        if type == 2:
             radar_num += 1
         elif type == 0:
             id %= 5
-            myrobots[id][0] = [row, col]
-            myrobots[id][1] = item
+            robot = myrobots[id]
+            robot.update(row, col, item)
 
-            # back home
-            if item == 4:
-                if order[id][0] == "DIG": # detect digging ore
-                    field[order[id][1]][order[id][2]][3] = 1
-                if radar_cooldown == 0 and not radar_taken and (previous_radar_num < 7 or len(ore_this_turn) < 5):
-                    order[id][0], order[id][1], order[id][2] = "REQUEST", "RADAR", -1
-                    myrobots[id][3] = 100
-                    radar_taken = 1
+            if robot.orderkind == "DIG":
+                field[robot.destrow][robot.destcol].diggedbyme = True
+                if item == 4:
+                    field[robot.destrow][robot.destcol].wasOre = True
                 else:
-                    order[id][0], order[id][1], order[id][2] = "MOVE", myrobots[id][0][0], 0
-                    myrobots[id][3] = 90
-                continue
+                    field[robot.destrow][robot.destcol].numofOre = 0
+        
+        elif type == 1:
+            id %= 5
+            robot = enemies[id]
+            robot.update(row, col, item)
+    
+    radar_says_ore, was_ore = [], []
+    for row in range(nrow):
+        for col in range(ncol):
+            cell = field[row][col]
+            if cell.numofOre > 0:
+                radar_says_ore.append([row,col])
+            elif cell.numofOre == -1 and cell.wasOre:
+                was_ore.append([row,col])
 
-            # digged but empty
-            elif order[id][0] == "DIG" and distance(myrobots[id][0], [order[id][1],order[id][2]]) < 2 and item==-1:
-                #field[order[id][1]][order[id][2]][3] = 0
-                myrobots[id][3] = 10
-            
-            # just got radar
-            if item == 2 and order[id][0] == "REQUEST":
-                if radar_put_place:
-                    targetrow, targetcol = radar_put_place.pop(0)
-                else:
-                    targetrow, targetcol = random.randint(5, 10), random.randint(10, 24)
-                # for c in range(5,25): # find place to put
-                #     if field[row][c-4][0] == -1 and field[row][c+4][0] == -1:
-                #         if field[max(0, row-4)][c][0] == -1 and field[min(14,row+4)][c][0] == -1:
-                #             targetrow, targetcol = row, c
-                #             break
-                #         targetrow, targetcol = row, c
-                order[id][0], order[id][1], order[id][2] = "DIG",targetrow, targetcol
-                myrobots[id][3] = 100
-            
-            # reset priority after finished going home
-            if item == -1 and myrobots[id][3] < 99:
-                myrobots[id][3] = 10
-
-            # robots with nothing to do
-            if myrobots[id][3] < 79:
-                for ore_index in range(len(ore_this_turn)):
-                    point, ore = ore_this_turn[ore_index]
-                    dist = distance([row,col], point)
-                    if dist < 2 and ore>0: # dig there
-                        #print("distance must be under2", dist, file=sys.stderr)
-                        order[id][0], order[id][1], order[id][2] = "DIG", point[0], point[1] 
-                        myrobots[id][3] = 80
-                        ore_this_turn[ore_index][1] -= 1
+    radar_incharge = False
+    # put order
+    for robot_idx in range(5):
+        robot = myrobots[robot_idx]
+        if robot.item == 4:
+            robot.home()
+        elif robot.item == 2:
+            if robot.orderkind == 'REQUEST':
+                radarrow, radarcol = nextplace_to_put_radar(tempi)
+                tempi+=1
+                robot.move(radarrow, radarcol, 100)
+            if distance(robot.row, robot.col, robot.destrow, robot.destcol) < 2:
+                robot.dig(robot.destrow, robot.destcol, 100)
+        elif robot.item == -1:
+            robot.orderpriority = 10
+            if robot.col == 0 and radar_cooldown < 2 and (radar_num < 6 or len(radar_says_ore) < 6) and not radar_incharge: # when short of radar
+                robot.request("RADAR", 100)
+                radar_incharge = True
+            else:
+                for candidate_idx in range(len(radar_says_ore)):
+                    row, col = radar_says_ore[candidate_idx]
+                    dist = distance(robot.row, robot.col, row, col)
+                    if dist < 2 and field[row][col].numofOre > 0:
+                        robot.dig(row,col, 80)
+                        field[row][col].numofOre -= 1
+                        if field[row][col].numofOre == 0: radar_says_ore.remove([row,col])
                         break
-                    elif dist < 5 and myrobots[id][3] < 49 and ore>0:
-                        order[id][0], order[id][1], order[id][2] = "MOVE", point[0], point[1]
-                        myrobots[id][3] = 50
-                    elif dist < 8 and myrobots[id][3] < 39:
-                        order[id][0], order[id][1], order[id][2] = "MOVE", point[0], point[1]
-                        myrobots[id][3] = 40
-                    elif myrobots[id][3] < 39:
-                        #print("distance must be over 7", dist, file=sys.stderr)
-                        order[id][0], order[id][1], order[id][2] = "MOVE", point[0], point[1]
-                        myrobots[id][3] = 30
-                if not ore_this_turn:
-                    if order[id][0] == 'MOVE':
-                        order[id][0], order[id][1], order[id][2] = "DIG", myrobots[id][0][0], myrobots[id][0][1] + 1
-                    elif order[id][0] == 'DIG':
-                        order[id][0], order[id][1], order[id][2] = "MOVE", myrobots[id][0][0], myrobots[id][0][1] + 4
-
-    previous_radar_num = radar_num
-    # take radar
-    nearest_robot, nearest_distance, nearest_priority = -1, 30, 49
-    if radar_cooldown < 4 and radar_num < 6:
-        for robot_idx in range(5):
-            if myrobots[robot_idx][3] > 89:
-                break
-            turn_needed = myrobots[robot_idx][0][1] // 4 + 1 # move + request
-            if nearest_distance > myrobots[robot_idx][0][1] and myrobots[robot_idx][3] <= nearest_priority:
-                nearest_distance = myrobots[robot_idx][0][1] // 4 * 4
-                nearest_robot = robot_idx
-                nearest_priority = myrobots[robot_idx][3]
-        else:
-            if radar_cooldown - myrobots[robot_idx][0][1] // 4 + 1 < 1: # rest 1 turn at most
-                order[nearest_robot][0], order[nearest_robot][1], order[nearest_robot][2] = "REQUEST", "RADAR", -1 
-                myrobots[nearest_robot][3] = 100
+                    elif robot.orderpriority < 40 - ( dist // 4):
+                        robot.move(row, col, 40-(dist//4))
 
 
-            
+            # nothing to do
+            if robot.orderpriority == 10:
+                for candidate_idx in range(len(was_ore)):
+                    row, col = was_ore[candidate_idx]
+                    dist = distance(robot.row, robot.col, row, col)
+                    if dist < 2 and field[row][col].numofOre != 0:
+                        robot.dig(row,col, 35)
+                        break
+                    elif robot.orderpriority < 30 - ( dist // 4):
+                        robot.move(row, col, 30-(dist//4))
+                if robot.orderpriority == 10: # really nothing to do
+                    for r, c in [[0, 1],[1,0],[0,-1],[-1,0],[0,0]]:
+                        if 0<=robot.row+r<15 and 0<=robot.col+c<30 and field[robot.row+r][robot.col+c].numofOre != 0:
+                            robot.dig(robot.row+r, robot.col+c, 20)
+                            break
+                    else:
+                        robot.move(14,29, 11)
 
-    # To debug: print("robots", file=sys.stderr)
-    print("rowcol, item, o, priority", myrobots, file=sys.stderr)
     #print order
-    for i in range(5):
-        if order[i][0] == "REQUEST":
-            print(order[i][0] + " " + order[i][1])
-        else:
-            print(order[i][0] + " " + str(order[i][2]) + " " + str(order[i][1]))
-
+    for robot_idx in range(5):
+        myrobots[robot_idx].printorder()
     loop += 1
