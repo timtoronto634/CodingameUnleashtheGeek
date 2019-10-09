@@ -8,24 +8,24 @@ def debug(strs, *vars):
     print(strs, *vars, file=sys.stderr)
 
 class Robot(object):
-    def __init__(self, row, col, item):
+    def __init__(self, row, col):
         self.row, self.col = row, col
-        self.item = item
     
-    def update(self, row, col, item):
+    def update(self, row, col):
         self.row, self.col = row, col
-        self.item = item
 
 class MyRobot(Robot):
     def __init__(self,row,col,item):
-        super().__init__(row, col, item)
+        super().__init__(row, col)
+        self.item = item
         self.orderkind = ""
         self.destrow, self.destcol = -1, -1
         self.request_item = "RADAR"
         self.orderpriority = 10
 
     def update(self, row, col, item):
-        return super().update(row, col, item)
+        self.item = item
+        return super().update(row, col)
 
     def dig(self, row, col, priority):
         self.orderkind = "DIG"
@@ -33,6 +33,17 @@ class MyRobot(Robot):
         self.orderpriority = priority
         if abs(self.row - self.destrow) + abs(self.col - self.destcol) > 1: raise ValueError("cant dig. too far")
     
+    def changeDestination(self, row, col, random=False):
+        if not random:
+            self.destrow = row
+            self.destcol = col
+        else:
+            for r, c in [[0,0], [0, 1],[1,0],[0,-1],[-1,0]]:
+                if 0<=row+r<15 and 0<=col+c<30 and field[row+r][col+c].hasownTrap == False:
+                    self.destrow = row+r
+                    self.destcol = col+c
+                    return
+
     def move(self,row,col, priority):
         self.orderkind = "MOVE"
         self.destrow, self.destcol = row, col
@@ -55,37 +66,23 @@ class MyRobot(Robot):
             print(self.orderkind + " " + str(self.destcol) + " " + str(self.destrow))
 
 class EnemyRobot(Robot):
-    def __init__(self, row, col, item):
-        super().__init__(row, col, item)
+    def __init__(self, row, col):
+        super().__init__(row, col)
         self.prerow, self.preprerow = -1, -1
         self.precol, self.preprecol = 0, 0
-        self.preitem = -1
     
-    def update(self, row, col, item):
+    def update(self, row, col):
         self.prerow, self.preprerow = self.row, self.prerow
         self.precol, self.preprecol = self.col, self.precol
-        #debug("item before: {}, item {}".format(self.item, item))
-        self.preitem = self.item
-        #debug("preitem: {}, selfitem {}".format(self.preitem, self.item))
-        return super().update(row, col, item)
+        return super().update(row, col)
 
-    def status(self):
-        if self.item != self.preitem:
-            if self.preitem == 2:
-                return 2
-            elif self.preitem == 3:
-                return 3
-            elif self.item == 4:
-                return 4
-        return 0
-
-    def item_places(self):
-        possibility = []
-        path_length = abs(self.preprerow - self.row) + abs(self.preprecol - self.col)
-        for r, c in [[0, 1],[1,0],[0,-1],[-1,0]]:
-            if 0<=self.row+r<15 and 0<=self.col+c<30 and abs(self.preprerow - self.row+r) + abs(self.preprecol - self.col+c) < path_length:
-                possibility += [row+r, col+c]
-        return possibility
+    # def dig_places(self):
+    #     possibility = []
+    #     path_length = abs(self.preprerow - self.row) + abs(self.preprecol - self.col)
+    #     for r, c in [[0, 1],[1,0],[0,-1],[-1,0]]:
+    #         if 0<=self.row+r<15 and 0<=self.col+c<30 and abs(self.preprerow - self.row+r) + abs(self.preprecol - self.col+c) < path_length:
+    #             possibility += [row+r, col+c]
+    #     return possibility
     
 class Cell(object):
     def __init__(self):
@@ -97,21 +94,30 @@ class Cell(object):
         self.wasOre = False
 
         # vague info estimated opponent move
-        self.RadarPossibility = False
-        self.TrapPossibility = 0
+        # self.RadarPossibility = False
+        # self.TrapPossibility = 0
         self.OrePossibility = False
     
     def foundOre(self):
         self.wasOre = True
-        self.TrapPossibility = 0
         self.OrePossibility = True
         self.diggedbyme = True
     
     def noOre(self):
         self.wasOre = False
-        self.TrapPossibility = 0
         self.OrePossibility = False
         self.numofOre = 0
+        self.diggedbyme = True
+    
+    def Trapput(self):
+        self.hasownTrap = True
+        self.diggedbyme = True
+        self.wasOre = False
+        self.OrePossibility = False
+    
+    def radardig(self):
+        self.numofOre = self.numofOre - 1 if self.numofOre>0 else self.numofOre
+        self.hole = True
         self.diggedbyme = True
 
 class Game(object):
@@ -127,7 +133,7 @@ priority:
      70 : break opponents radar with 0 or 1 move
 
      50: go to ore place from radar with 1 move
-     49: go to ore place from radar with n move (-2n priority, -t trap)
+     49: go to ore place from radar with n move (-2n priority)
 
      35: dig ore place from wasore
      30: go to ore place from wasore with n move (-n+1 priority)
@@ -141,34 +147,62 @@ enemy status:
     3: just put trap
     4: just got ore
 """
+    
+# if digged ore, detect
+def detectOrefinding(robot):
+    return robot.preprerow == robot.prerow and robot.preprecol == robot.precol and robot.precol - robot.col > 2
 
 def distance(robotrow, robotcol, cellrow, cellcol):
     return abs(robotrow - cellrow) + abs(robotcol - cellcol)
 
 def nextplace_to_put_radar(tempi, field):
-    temp = [[10,8],[1,11],[8,2],[6,13],[10,18],[3,19], [7,23]]
+    temp = [[10,8],[6,13],[1,11],[8,2],[10,18],[3,19], [7,23]]
     if tempi >= len(temp):
         return [random.randint(4,10), random.randint(25,29)]
     row, col = temp[tempi]
     for r, c in [[0,0], [0, 1],[1,0],[0,-1],[-1,0]]:
-        if 0<=row+r<15 and 0<=col+c<30 and not field[row+r][col+c].TrapPossibility:
+        if 0<=row+r<15 and 0<=col+c<30 and field[row+r][col+c].numofOre == -1:
             #print("for radar, r c", r, c, file=sys.stderr)
             return [row+r, col+c]
     #print("for radar, everywhere is trap", file=sys.stderr)
     return [row,col]
-# height: size of the map
+
+def nextplace_to_put_trap(ore_place, robot):
+    traprow, trapcol, closest = 0, 0, 10
+    for row, col in ore_place:
+        dist = distance(robot.row, robot.col, row, col)
+        if dist < 2:
+            if field[row][col].numofOre == 2 and field[row][col].hasownTrap==False:
+                traprow, trapcol = row, col
+                break
+            elif field[row][col].numofOre > 2 and field[row][col].hasownTrap==False:
+                traprow, trapcol = row, col
+            elif field[row][col].numofOre == 1 and trapcol==0 and field[row][col].hasownTrap==False:
+                traprow, trapcol = row, col
+            closest = 0
+        elif dist // 4 < closest:
+            closest = dist//4
+            if field[row][col].numofOre == 2 and field[row][col].hasownTrap==False:
+                traprow, trapcol = row, col
+            elif field[row][col].numofOre > 2 and field[row][col].hasownTrap==False:
+                traprow, trapcol = row, col
+            elif field[row][col].numofOre == 1 and trapcol==0 and field[row][col].hasownTrap==False:
+                traprow, trapcol = row, col
+    return traprow, trapcol
+
 ncol, nrow = [int(i) for i in input().split()]
 field = [[Cell() for col in range(ncol)] for row in range(nrow)]
 myrobots = [MyRobot(-1,-1,-1) for _ in range(5)]
-enemies = [EnemyRobot(-1,-1,-1) for _ in range(5)]
+enemies = [EnemyRobot(-1,-1) for _ in range(5)]
 
     # field = [[[-1,-1,-1,-1] for w in range(widths)] for h in range(heights)] # field info. [isinradar, istrap, #ofore, diggedbyme]
     # myrobots = [[[],-1,[-1,-1,-1],-1] for _ in range(5)]  # [[row,col], item, [orderkind, targetrow,targetcol], orderpriority]
     # order = [["",-1,-1] for _ in range(5)] # MOVE row col | DIG row col | REQUEST
 
-# game loop
-loop = 0
 
+#-------------------------------------------------------------------------------------------------------------------------------------
+# game turn
+turn = 0
 # first three turn
 for initial in range(3):
     my_score, opponent_score = [int(i) for i in input().split()]
@@ -193,7 +227,7 @@ for initial in range(3):
         # y: position of the entity
         # item: if this entity is a robot, the item it is carrying (-1 for NONE, 2 for RADAR, 3 for TRAP, 4 for ORE)
         id, type, col, row, item = [int(j) for j in input().split()]
-        debug("type {} item {}".format(type, item))
+        #debug("type {} item {}".format(type, item))
 
         if type == 0:
             id %= 5
@@ -209,29 +243,9 @@ for initial in range(3):
         elif type == 1:
             id %= 5
             robot = enemies[id]
-            #debug("robot {} item before: {}".format(id, robot.item))
-            robot.update(row, col, item)
-            #debug('robot {} item after: {}'.format(id, robot.item))
-            status = robot.status
-            if status == 0:
-                pass
-            elif status == 2:
-                radar_possible_place = robot.item_places()
-                for possible_radar_row, possible_radar_col in radar_possible_place:
-                    field[possible_radar_row][possible_radar_col].RadarPossibility = True
-            elif status == 3:
-                trap_possible_place = robot.item_places()
-                #print("detect trap placement", trap_possible_place, file=sys.stderr)
-                for possible_trap_row, possible_trap_col in trap_possible_place:
-                    field[possible_trap_row][possible_trap_col].TrapPossibility += 1
-            elif status == 4:
-                ore_possible_place = robot.item_places()
-                for possible_ore_row, possible_ore_col in ore_possible_place:
-                    field[possible_ore_row][possible_ore_col].OrePossibility = True
+            robot.update(row, col)
 
-
-
-    if loop == 0:
+    if turn == 0:
         nearest_dist, nearest_robot_idx = 5, 0
         for robot_idx in range(5):
             robot = myrobots[robot_idx]
@@ -240,7 +254,7 @@ for initial in range(3):
                 nearest_dist = abs(4-robot.row)
                 nearest_robot_idx = robot_idx
         myrobots[nearest_robot_idx].request("RADAR", 90)
-    elif loop == 1:
+    elif turn == 1:
         for robot_idx in range(5):
             robot = myrobots[robot_idx]
             if robot.item ==2:
@@ -248,7 +262,7 @@ for initial in range(3):
             else:
                 robot.dig(robot.row, robot.col+1, 10)
 
-    elif loop == 2:
+    elif turn == 2:
         for robot_idx in range(5):
             robot = myrobots[robot_idx]
             if robot.item ==2:
@@ -262,11 +276,11 @@ for initial in range(3):
     #print order
     for robot_idx in range(5):
         myrobots[robot_idx].printorder()
-    loop += 1
+    turn += 1
 
 
 
-
+# ----------------------------------------------------------------------------------------------------------------------------------------------
 tempi = 0 # temporal for radar put place
 while True:
     # my_score: Amount of ore delivered
@@ -289,14 +303,14 @@ while True:
     # radar_cooldown: turns left until a new radar can be requested
     # trap_cooldown: turns left until a new trap can be requested
     entity_count, radar_cooldown, trap_cooldown = [int(i) for i in input().split()]
-    radar_taken, radar_num = 0, 0
+    radar_num, trap_num = 0, 0
     for i in range(entity_count):
         # id: unique id of the entity
         # type: 0 for your robot, 1 for other robot, 2 for radar, 3 for trap
         # x y: position of the entity
         # item: if this entity is a robot, the item it is carrying (-1 for NONE, 2 for RADAR, 3 for TRAP, 4 for ORE)
         id, type, col, row, item = [int(j) for j in input().split()]
-        debug("type {} col {} row {}".format(type, col, row))
+        #debug("type {} col {} row {}".format(type, col, row))
 
         if type == 2:
             radar_num += 1
@@ -310,43 +324,27 @@ while True:
                     field[robot.destrow][robot.destcol].foundOre()
                 else:
                     field[robot.destrow][robot.destcol].noOre()
-        
+        elif type == 3:
+            trap_num += 1
         elif type == 1:
             id %= 5
             robot = enemies[id]
-            #debug("robot {} item before: {}, iteminput {}".format(id, robot.item, item))
-            robot.update(row, col, item)
-            #debug('robot {} item after: {}'.format(id, robot.item))
-            status = robot.status
-            if status == 0:
-                pass
-            elif status == 2:
-                radar_possible_place = robot.item_places()
-                for possible_radar_row, possible_radar_col in radar_possible_place:
-                    field[possible_radar_row][possible_radar_col].RadarPossibility = True
-            elif status == 3:
-                trap_possible_place = robot.item_places()
-                #print("detect trap placement", trap_possible_place, file=sys.stderr)
-                for possible_trap_row, possible_trap_col in trap_possible_place:
-                    field[possible_trap_row][possible_trap_col].TrapPossibility += 1
-            elif status == 4:
-                ore_possible_place = robot.item_places()
-                for possible_ore_row, possible_ore_col in ore_possible_place:
-                    field[possible_ore_row][possible_ore_col].OrePossibility = True
-    
-    ore_place, was_ore, near_ore = [], [], []
+            robot.update(row, col)
+
+    # for each cell
+    ore_place, was_ore, near_was_ore = [], [], []
     for row in range(nrow):
         for col in range(ncol):
             cell = field[row][col]
-            if cell.numofOre > 0:
-                ore_place.append([row, col, cell.TrapPossibility])
+            if cell.numofOre > 0 and cell.hasownTrap==False:
+                ore_place.append([row, col])
             elif cell.numofOre == -1 and cell.wasOre:
                 was_ore.append([row,col])
                 for r, c in [[0, 1],[1,0],[0,-1],[-1,0]]:
                     if 0<=row+r<15 and 0<=col+c<30 and field[row][col].numofOre == -1:
-                        near_ore.append([row+r, col+c])
+                        near_was_ore.append([row+r, col+c])
 
-    radar_incharge = False
+    radar_incharge, trap_incharge = False, False
     # put order
     for robot_idx in range(5):
         robot = myrobots[robot_idx]
@@ -358,23 +356,46 @@ while True:
                 tempi+=1
                 robot.move(radarrow, radarcol, 100)
             if distance(robot.row, robot.col, robot.destrow, robot.destcol) < 2:
+                if field[robot.destrow][robot.destcol].hasownTrap==True:
+                    robot.changeDestination(robot.row, robot.col, random=True)
                 robot.dig(robot.destrow, robot.destcol, 100)
+        elif robot.item == 3:
+            if robot.orderkind == 'REQUEST':
+                traprow, trapcol = nextplace_to_put_trap(ore_place, robot)
+                if trapcol != 0: robot.move(traprow, trapcol, 50)
+                else:
+                    debug("==WARNING==could not find place to put trap", ore_place)
+                    robot.move(robot.row, 1)
+            if field[robot.destrow][robot.destcol].numofOre==0 or field[robot.destrow][robot.destcol].hasownTrap:
+                traprow, trapcol = nextplace_to_put_trap(ore_place, robot)
+                if trapcol != 0: robot.move(traprow, trapcol, 50)
+                else:
+                    debug("==WARNING==could not find place to put trap", ore_place)
+                    robot.move(robot.row, 1)
+            if distance(robot.row, robot.col, robot.destrow, robot.destcol) < 2:
+                robot.dig(robot.destrow, robot.destcol, 50)
+                field[robot.destrow][robot.destcol].Trapput()
         elif robot.item == -1:
             robot.orderpriority = 10
-            if robot.col == 0 and radar_cooldown < 2 and (radar_num < 6 or len(ore_place) < 10) and not radar_incharge: # when short of radar
+            # when short of radar
+            if robot.col == 0 and radar_cooldown < 2 and (radar_num < 6 or len(ore_place) < 10) and not radar_incharge:
                 robot.request("RADAR", 100)
                 radar_incharge = True
+            # when need trap
+            elif robot.col == 0 and len(ore_place) > 3 and trap_cooldown == 0 and (trap_num < 3 or turn % 30 == 0) and not trap_incharge:
+                robot.request("TRAP", 50)
+                trap_incharge = True
             else:
                 for candidate_idx in range(len(ore_place)):
-                    row, col, trap_possibility = ore_place[candidate_idx]
+                    row, col = ore_place[candidate_idx]
                     dist = distance(robot.row, robot.col, row, col)
-                    if dist < 2 and field[row][col].numofOre > 0 and not trap_possibility:
+                    if dist < 2 and field[row][col].numofOre > 0 and field[row][col].hasownTrap==False:
                         robot.dig(row,col, 80)
-                        field[row][col].numofOre -= 1
-                        if field[row][col].numofOre == 0: ore_place.remove([row,col, trap_possibility])
+                        field[row][col].radardig()
+                        if field[row][col].numofOre == 0: ore_place.remove([row, col])
                         break
-                    elif robot.orderpriority < 50 - dist // 4 * 2 - trap_possibility:
-                        robot.move(row, col, 50 - dist // 4 * 2 - trap_possibility)
+                    elif robot.orderpriority < 50 - dist // 4 * 2:
+                        robot.move(row, col, 50 - dist // 4 * 2)
 
 
             # nothing to do
@@ -382,23 +403,23 @@ while True:
                 for candidate_idx in range(len(was_ore)):
                     row, col = was_ore[candidate_idx]
                     dist = distance(robot.row, robot.col, row, col)
-                    if dist < 2 and field[row][col].numofOre != 0:
+                    if dist < 2 and field[row][col].numofOre != 0 and field[row][col].hasownTrap==False:
                         robot.dig(row,col, 35)
                         break
                     elif robot.orderpriority < 30 - ( dist // 4):
                         robot.move(row, col, 30-(dist//4))
                 if robot.orderpriority == 10: # really nothing to do
-                    for candidate_idx in range(len(near_ore)):
-                        row, col = near_ore[candidate_idx]
+                    for candidate_idx in range(len(near_was_ore)):
+                        row, col = near_was_ore[candidate_idx]
                         dist = distance(robot.row, robot.col, row, col)
-                        if dist < 2 and field[row][col].numofOre != 0:
+                        if dist < 2 and field[row][col].numofOre != 0 and field[row][col].hasownTrap==False:
                             robot.dig(row,col, 30)
                             break
                         elif robot.orderpriority < 30 - ( dist // 4):
                             robot.move(row, col, 30-(dist//4))
                 if robot.orderpriority == 10: # really nothing to do
                     for r, c in [[0, 1],[1,0],[0,-1],[-1,0],[0,0]]:
-                        if 0<=robot.row+r<15 and 0<=robot.col+c<30 and field[robot.row+r][robot.col+c].numofOre != 0:
+                        if 0<=robot.row+r<15 and 0<=robot.col+c<30 and field[robot.row+r][robot.col+c].numofOre != 0 and field[row][col].hasownTrap==False:
                             robot.dig(robot.row+r, robot.col+c, 20)
                             break
                     else:
@@ -407,4 +428,4 @@ while True:
     #print order
     for robot_idx in range(5):
         myrobots[robot_idx].printorder()
-    loop += 1
+    turn += 1
