@@ -119,11 +119,132 @@ class Cell(object):
         self.numofOre = self.numofOre - 1 if self.numofOre>0 else self.numofOre
         self.hole = True
         self.diggedbyme = True
+    
+    def rangeRadar(self):
+        self.inRadarRange = True
+        if self.numofOre == -1:
+            self.numofOre = 0
 
 class Game(object):
     def __init__(self):
-        self.myRadarnum = 0
+        self.myRadarplacement = []
         self.myTrapplacement = []
+        self.goingHome = []
+        self.shortofRadar = True
+        self.rest = None
+    
+    def putRadar(self, row, col):
+        if [row, col] not in self.myRadarplacement:
+            self.myRadarplacement.append([row, col])
+            return True
+        return False
+    
+    def putTrap(self, row, col):
+        if [row, col] not in self.myTrapplacement:
+            self.myTrapplacement.append([row, col])
+    
+    def gohome(self, robot_idx, turn):
+        self.goingHome.append([robot_idx, turn])
+    
+    def backhome(self, robot_idx):
+        for i in range(len(self.goingHome)):
+            if self.goingHome[i][0] == robot_idx:
+                self.goingHome.pop(i)
+                return None
+    
+    def nextplace_to_put_radar(self, field, robot):
+        lastRadar = max(self.myRadarplacement, key=lambda x: x[1])
+        [row, col] = lastRadar
+        if row != 7:
+            if row == 3 and not field[11][col].inRadarRange:
+                return 11, col
+            elif row == 11 and not field[3][col].inRadarRange:
+                return 3, col
+            elif col < 25:
+                return 7, col+5
+
+
+        # second radar
+        if len(self.myRadarplacement) == 1:
+            leftup, leftdown, rightup, rightdown = 0, 0, 0, 0
+            for r in range(-4,1):
+                for c in range(-4-r, 1):
+                    if 0<=row+r<15 and 0<=col+c<30:
+                        leftup += field[row+r][col+c].numofOre
+                    else:
+                        leftup = 0
+                        break
+                for c in range(1,5+r):
+                    if 0<=row+r<15 and 0<=col+c<30:
+                        rightup += field[row+r][col+c].numofOre
+            for r in range(0, 5):
+                for c in range(-4+r, 1):
+                    if 0<=row+r<15 and 0<=col+c<30:
+                        leftdown += field[row+r][col+c].numofOre
+                for c in range(1,5-r):
+                    if 0<=row+r<15 and 0<=col+c<30:
+                        rightdown += field[row+r][col+c].numofOre
+
+            # if max(leftup, leftdown, rightup, rightdown) < 2:
+            #     rownext = row + 4 if row < 10 else row - 4
+            #     colnext = col + 5
+            #     return rownext, colnext
+            debug("values{} {} {} {}".format(leftup, leftdown, rightup, rightdown))
+            if leftup == max([leftup, leftdown, rightup, rightdown]):
+                if not field[row-4][col-5].inRadarRange:
+                    self.rest = [11, col-5]
+                    return 3, col-5
+                debug("leftup {} passed rc:{},{}".format(leftup, row,col))
+            leftup = 0
+            if leftdown == max([leftup, leftdown, rightup, rightdown]):
+                if not field[row+4][col-5].inRadarRange:
+                    self.rest = [3, col-5]
+                    return 11, col-5
+                debug("leftdown {} passed rc:{},{}".format(leftdown, row,col))
+            leftdown = 0
+            self.rest = [3,col-5,11,col-5]
+            if rightup == max([leftup, leftdown, rightup, rightdown]):
+                return 3, col+5
+                debug("rightup {} passed rc:{},{}".format(rightup, row,col))
+            rightup = 0
+            if rightdown == max([leftup, leftdown, rightup, rightdown]):
+                return 11, col+5
+                debug("final")
+            debug("radarputerror lastradar {},{}, rightdown{}".format(row,col, rightdown))
+        
+        if row == 7 and col < 25:
+            rightup, rightdown = 0, 0
+            for c in range(0, 5):
+                for r in range(-4+c, 0):
+                    rightup += field[row+r][col+c].numofOre
+                for r in range(1,5-c):
+                    rightdown += field[row+r][col+c].numofOre
+            if rightup < rightdown:
+                return 11, col+5
+            else:
+                return 3, col+5
+
+        if self.rest:
+            col = self.rest.pop()
+            row = self.rest.pop()
+            return row, col
+
+        # final option
+        nextrow, nextcol = -1, -1
+        for r in range(15):
+            consistance = 0
+            for c in range(30):
+                if field[r][c].inRadarRange:
+                    consistance = 0
+                else:
+                    consistance += 1
+                if consistance == 7 and (nextcol == -1 or nextcol > c-3):
+                    nextrow, nextcol = r, c-3
+        if nextcol == -1:
+            self.shortofRadar = False
+            nextrow, nextcol = robot.row, 1
+        return nextrow, nextcol
+
 """
 priority:
     100 : request radar and put radar when short
@@ -155,17 +276,17 @@ def detectOrefinding(robot):
 def distance(robotrow, robotcol, cellrow, cellcol):
     return abs(robotrow - cellrow) + abs(robotcol - cellcol)
 
-def nextplace_to_put_radar(tempi, field):
-    temp = [[10,8],[6,13],[1,11],[8,2],[10,18],[3,19], [7,23]]
-    if tempi >= len(temp):
-        return [random.randint(4,10), random.randint(25,29)]
-    row, col = temp[tempi]
-    for r, c in [[0,0], [0, 1],[1,0],[0,-1],[-1,0]]:
-        if 0<=row+r<15 and 0<=col+c<30 and field[row+r][col+c].numofOre == -1:
-            #print("for radar, r c", r, c, file=sys.stderr)
-            return [row+r, col+c]
-    #print("for radar, everywhere is trap", file=sys.stderr)
-    return [row,col]
+# def nextplace_to_put_radar(tempi, field):
+#     temp = [[10,8],[6,13],[1,11],[8,2],[10,18],[3,19], [7,23]]
+#     if tempi >= len(temp):
+#         return [random.randint(4,10), random.randint(25,29)]
+#     row, col = temp[tempi]
+#     for r, c in [[0,0], [0, 1],[1,0],[0,-1],[-1,0]]:
+#         if 0<=row+r<15 and 0<=col+c<30 and field[row+r][col+c].numofOre == -1:
+#             #print("for radar, r c", r, c, file=sys.stderr)
+#             return [row+r, col+c]
+#     #print("for radar, everywhere is trap", file=sys.stderr)
+#     return [row,col]
 
 def nextplace_to_put_trap(ore_place, robot):
     traprow, trapcol, closest = 0, 0, 10
@@ -203,8 +324,9 @@ enemies = [EnemyRobot(-1,-1) for _ in range(5)]
 #-------------------------------------------------------------------------------------------------------------------------------------
 # game turn
 turn = 0
+game = Game()
 # first three turn
-for initial in range(3):
+for initial in range(4):
     my_score, opponent_score = [int(i) for i in input().split()]
 
     for row in range(nrow):
@@ -244,34 +366,46 @@ for initial in range(3):
             id %= 5
             robot = enemies[id]
             robot.update(row, col)
+        
+        elif type == 2:
+            isnew = game.putRadar(row, col)
+            if isnew:
+                for i in range(-4,5):
+                    for j in range(-4+abs(i), 5-abs(i)):
+                        if 0<=row+i<15 and 0<=col+j<30:
+                            field[row+i][col+j].rangeRadar()
 
     if turn == 0:
-        nearest_dist, nearest_robot_idx = 5, 0
+        nearest_dist, nearest_robot_idx = 7, 0
         for robot_idx in range(5):
             robot = myrobots[robot_idx]
-            robot.move(robot.row, robot.col+4, 10)
-            if abs(4 - robot.row) < nearest_dist:
-                nearest_dist = abs(4-robot.row)
+            robot.move(robot.row + (2 * (robot.row < 7) - 1), 3, 10)
+            if abs(7 - robot.row) < nearest_dist:
+                nearest_dist = abs(7-robot.row)
                 nearest_robot_idx = robot_idx
         myrobots[nearest_robot_idx].request("RADAR", 90)
     elif turn == 1:
         for robot_idx in range(5):
             robot = myrobots[robot_idx]
             if robot.item ==2:
-                robot.move(robot.row, robot.col+4, 90)
+                robot.move(7, max(0, 4 - abs(7-robot.row)), 90)
             else:
-                robot.dig(robot.row, robot.col+1, 10)
+                robot.move(robot.row + (2 * (robot.row < 7) - 1), robot.col+3, 10)
 
     elif turn == 2:
         for robot_idx in range(5):
             robot = myrobots[robot_idx]
             if robot.item ==2:
-                robot.dig(robot.row, robot.col+1, 90)
-            elif robot.item == 4:
-                robot.home()
+                robot.move(7, robot.col + max(0, 4 - abs(7-robot.row)), 90)
             else:
-                # if anyone found ore, try to go there
-                robot.dig(robot.row, robot.col-1, 10)
+                robot.move(robot.row, robot.col+4, 90)
+    elif turn == 3:
+        for robot_idx in range(5):
+            robot = myrobots[robot_idx]
+            if robot.item == 2:
+                robot.dig(robot.row, robot.col+1, 90)
+            else:
+                robot.dig(robot.row, robot.col+1,50)
 
     #print order
     for robot_idx in range(5):
@@ -281,7 +415,6 @@ for initial in range(3):
 
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------
-tempi = 0 # temporal for radar put place
 while True:
     # my_score: Amount of ore delivered
     my_score, opponent_score = [int(i) for i in input().split()]
@@ -303,7 +436,6 @@ while True:
     # radar_cooldown: turns left until a new radar can be requested
     # trap_cooldown: turns left until a new trap can be requested
     entity_count, radar_cooldown, trap_cooldown = [int(i) for i in input().split()]
-    radar_num, trap_num = 0, 0
     for i in range(entity_count):
         # id: unique id of the entity
         # type: 0 for your robot, 1 for other robot, 2 for radar, 3 for trap
@@ -313,7 +445,14 @@ while True:
         #debug("type {} col {} row {}".format(type, col, row))
 
         if type == 2:
-            radar_num += 1
+            isnew = game.putRadar(row, col)
+            if isnew:
+                debug("new radar {} {} ".format(row,col))
+                for i in range(-4,5):
+                    for j in range(-4+abs(i), 5-abs(i)):
+                        if 0<=row+i<15 and 0<=col+j<30:
+                            field[row+i][col+j].rangeRadar()
+
         elif type == 0:
             id %= 5
             robot = myrobots[id]
@@ -325,7 +464,7 @@ while True:
                 else:
                     field[robot.destrow][robot.destcol].noOre()
         elif type == 3:
-            trap_num += 1
+            game.putTrap(row, col)
         elif type == 1:
             id %= 5
             robot = enemies[id]
@@ -352,13 +491,16 @@ while True:
             robot.home()
         elif robot.item == 2:
             if robot.orderkind == 'REQUEST':
-                radarrow, radarcol = nextplace_to_put_radar(tempi, field)
-                tempi+=1
+                radarrow, radarcol = game.nextplace_to_put_radar(field, robot)
+                robot.move(radarrow, radarcol, 100)
+            if field[robot.destrow][robot.destcol].inRadarRange:
+                radarrow, radarcol = game.nextplace_to_put_radar(field, robot)
                 robot.move(radarrow, radarcol, 100)
             if distance(robot.row, robot.col, robot.destrow, robot.destcol) < 2:
                 if field[robot.destrow][robot.destcol].hasownTrap==True:
                     robot.changeDestination(robot.row, robot.col, random=True)
-                robot.dig(robot.destrow, robot.destcol, 100)
+                else:
+                    robot.dig(robot.destrow, robot.destcol, 100)
         elif robot.item == 3:
             if robot.orderkind == 'REQUEST':
                 traprow, trapcol = nextplace_to_put_trap(ore_place, robot)
@@ -378,11 +520,11 @@ while True:
         elif robot.item == -1:
             robot.orderpriority = 10
             # when short of radar
-            if robot.col == 0 and radar_cooldown < 2 and (radar_num < 6 or len(ore_place) < 10) and not radar_incharge:
+            if robot.col == 0 and radar_cooldown < 2 and game.shortofRadar and not radar_incharge:
                 robot.request("RADAR", 100)
                 radar_incharge = True
             # when need trap
-            elif robot.col == 0 and len(ore_place) > 3 and trap_cooldown == 0 and (trap_num < 3 or turn % 30 == 0) and not trap_incharge:
+            elif robot.col == 0 and len(ore_place) > 3 and trap_cooldown == 0 and (len(game.myTrapplacement) < 3 or turn % 30 == 0) and not trap_incharge:
                 robot.request("TRAP", 50)
                 trap_incharge = True
             else:
