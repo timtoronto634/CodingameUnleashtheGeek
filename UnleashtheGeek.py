@@ -185,10 +185,11 @@ class Game(object):
                     if 0<=row+r<15 and 0<=col+c<30:
                         rightdown += field[row+r][col+c].numofOre
 
-            # if max(leftup, leftdown, rightup, rightdown) < 2:
-            #     rownext = row + 4 if row < 10 else row - 4
-            #     colnext = col + 5
-            #     return rownext, colnext
+            if max(leftup, leftdown, rightup, rightdown) < 2: # no clue
+                if robot.row < 7:
+                    return 3, col - 5
+                else:
+                    return 11, col - 5
             debug("values{} {} {} {}".format(leftup, leftdown, rightup, rightdown))
             if leftup == max([leftup, leftdown, rightup, rightdown]):
                 if not field[row-4][col-5].inRadarRange:
@@ -475,7 +476,7 @@ while True:
     for row in range(nrow):
         for col in range(ncol):
             cell = field[row][col]
-            if cell.numofOre > 0 and cell.hasownTrap==False:
+            if cell.numofOre > 0 and cell.hasownTrap==False and (cell.diggedbyme or not cell.hole):
                 ore_place.append([row, col])
             elif cell.numofOre == -1 and cell.wasOre:
                 was_ore.append([row,col])
@@ -523,18 +524,21 @@ while True:
             if robot.col == 0 and radar_cooldown < 2 and game.shortofRadar and not radar_incharge:
                 robot.request("RADAR", 100)
                 radar_incharge = True
-            # when need trap
-            elif robot.col == 0 and len(ore_place) > 3 and trap_cooldown == 0 and (len(game.myTrapplacement) < 3 or turn % 30 == 0) and not trap_incharge:
-                robot.request("TRAP", 50)
-                trap_incharge = True
+            # # when need trap
+            # elif robot.col == 0 and len(ore_place) > 3 and trap_cooldown == 0 and (len(game.myTrapplacement) < 3 or turn % 30 == 0) and not trap_incharge:
+            #     robot.request("TRAP", 50)
+            #     trap_incharge = True
             else:
+                random.shuffle(ore_place)
                 for candidate_idx in range(len(ore_place)):
                     row, col = ore_place[candidate_idx]
                     dist = distance(robot.row, robot.col, row, col)
                     if dist < 2 and field[row][col].numofOre > 0 and field[row][col].hasownTrap==False:
                         robot.dig(row,col, 80)
                         field[row][col].radardig()
-                        if field[row][col].numofOre == 0: ore_place.remove([row, col])
+                        if field[row][col].numofOre == 0:
+                            debug("radardig make ore empty")
+                            ore_place.remove([row, col])
                         break
                     elif robot.orderpriority < 50 - dist // 4 * 2:
                         robot.move(row, col, 50 - dist // 4 * 2)
