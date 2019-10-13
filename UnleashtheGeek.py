@@ -187,9 +187,9 @@ class Game(object):
 
             if max(leftup, leftdown, rightup, rightdown) < 2: # no clue
                 if robot.row < 7:
-                    return 3, col - 5
+                    return 3, col + 5
                 else:
-                    return 11, col - 5
+                    return 11, col + 5
             debug("values{} {} {} {}".format(leftup, leftdown, rightup, rightdown))
             if leftup == max([leftup, leftdown, rightup, rightdown]):
                 if not field[row-4][col-5].inRadarRange:
