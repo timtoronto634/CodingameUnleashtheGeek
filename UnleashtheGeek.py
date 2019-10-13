@@ -542,11 +542,11 @@ while True:
                     elif robot.orderpriority < 50 - dist // 4 * 2:
                         reserve_cnt = 0
                         for prev_i in range(robot_idx):
-                            if myrobots[prev_i].destrow == row and myrobots[prev_i].destcol == col:
+                            if myrobots[prev_i].destrow == row and myrobots[prev_i].destcol + 1 == col:
                                 reserve_cnt += 1
                         if reserve_cnt >= field[row][col].numofOre:
                             continue
-                        robot.move(row, col, 50 - dist // 4 * 2)
+                        robot.move(row, col - 1, 50 - dist // 4 * 2)
 
 
             # nothing to do
@@ -558,7 +558,7 @@ while True:
                         robot.dig(row,col, 35)
                         break
                     elif robot.orderpriority < 30 - ( dist // 4):
-                        robot.move(row, col, 30-(dist//4))
+                        robot.move(row, col-1, 30-(dist//4))
                 if robot.orderpriority == 10: # really nothing to do
                     for candidate_idx in range(len(near_was_ore)):
                         row, col = near_was_ore[candidate_idx]
@@ -567,7 +567,7 @@ while True:
                             robot.dig(row,col, 30)
                             break
                         elif robot.orderpriority < 30 - ( dist // 4):
-                            robot.move(row, col, 30-(dist//4))
+                            robot.move(row, col-1, 30-(dist//4))
                 if robot.orderpriority == 10: # really nothing to do
                     for r, c in [[0, 1],[1,0],[0,-1],[-1,0],[0,0]]:
                         if 0<=robot.row+r<15 and 0<=robot.col+c<30 and field[robot.row+r][robot.col+c].numofOre != 0 and field[row][col].hasownTrap==False:
