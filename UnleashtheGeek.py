@@ -140,6 +140,7 @@ class Cell(object):
         
     def alert(self):
         if self.hole:
+            debug("update14")
             self.TrapPossibility = True
 
 class Game(object):
@@ -213,22 +214,22 @@ class Game(object):
                 if not field[row-4][col-5].inRadarRange:
                     self.rest = [11, col-5]
                     return 3, col-5
-                debug("leftup {} passed rc:{},{}".format(leftup, row,col))
+                #debug("leftup {} passed rc:{},{}".format(leftup, row,col))
             leftup = 0
             if leftdown == max([leftup, leftdown, rightup, rightdown]):
                 if not field[row+4][col-5].inRadarRange:
                     self.rest = [3, col-5]
                     return 11, col-5
-                debug("leftdown {} passed rc:{},{}".format(leftdown, row,col))
+                #debug("leftdown {} passed rc:{},{}".format(leftdown, row,col))
             leftdown = 0
             self.rest = [3,col-5,11,col-5]
             if rightup == max([leftup, leftdown, rightup, rightdown]):
                 return 3, col+5
-                debug("rightup {} passed rc:{},{}".format(rightup, row,col))
+                #debug("rightup {} passed rc:{},{}".format(rightup, row,col))
             rightup = 0
             if rightdown == max([leftup, leftdown, rightup, rightdown]):
                 return 11, col+5
-                debug("final")
+                #debug("final")
             debug("radarputerror lastradar {},{}, rightdown{}".format(row,col, rightdown))
         
         if row == 7 and col < 25:
@@ -482,7 +483,7 @@ while True:
         if type == 2:
             isnew = game.putRadar(row, col)
             if isnew:
-                debug("new radar {} {} ".format(row,col))
+                #debug("new radar {} {} ".format(row,col))
                 for i in range(-4,5):
                     for j in range(-4+abs(i), 5-abs(i)):
                         if 0<=row+i<15 and 0<=col+j<30:
@@ -509,10 +510,11 @@ while True:
     for enemy_idx in range(5):
         enemy_robot = enemies[enemy_idx]
         alert = enemy_robot.anyalert()
-        debug("enemy{},{} alert:".format(enemy_robot.row, enemy_robot.col), alert)
+        #debug("enemy{},{} alert:".format(enemy_robot.row, enemy_robot.col), alert)
         if alert != []:
             debug("alert:",alert)
             for r,c in alert:
+                debug("hole{},{}?".format(r,c))
                 field[r][c].alert()
 
     # for each cell
@@ -522,14 +524,15 @@ while True:
         for col in range(ncol):
             cell = field[row][col]
             if cell.numofOre > 0 and cell.hasownTrap==False:
-                if cell.diggedbyme or not cell.TrapPossibility:
+                if not cell.TrapPossibility:
                     ore_place.append([row, col])
-                elif cell.numofOre>1 and cell.diggedbyme==False and cell.hole==True:
+                elif cell.numofOre>1 and cell.diggedbyme==False and cell.hole==True and cell.TrapPossibility==False:
                     trap_place.append([row,col])
             elif cell.numofOre == -1 and cell.wasOre:
-                was_ore.append([row,col])
+                if not cell.hasownTrap and not cell.TrapPossibility:
+                    was_ore.append([row,col])
                 for r, c in [[0, 1],[1,0],[0,-1],[-1,0]]:
-                    if 0<=row+r<15 and 0<=col+c<30 and field[row][col].numofOre == -1:
+                    if 0<=row+r<15 and 0<=col+c<30 and field[row][col].numofOre == -1 and field[row][col].TrapPossibility==False and field[row][col].hasownTrap==False:
                         near_was_ore.append([row+r, col+c])
 
     radar_incharge, trap_incharge = False, False
@@ -550,11 +553,13 @@ while True:
                     robot.changeDestination(robot.row, robot.col, random=True)
                 else:
                     robot.dig(robot.destrow, robot.destcol, 100)
+                    debug("order55")
         elif robot.item == 3:
             if robot.orderkind == 'REQUEST':
                 traprow, trapcol = game.nextplace_to_put_trap(trap_place, robot)
                 if distance(robot.row, robot.col, traprow, trapcol) < 2:
                     robot.dig(traprow, trapcol, 80)
+                    debug("order56")
                 else:
                     robot.move(traprow, trapcol, 50)
             if field[robot.destrow][robot.destcol].numofOre < 2 or field[robot.destrow][robot.destcol].hasownTrap:
@@ -562,6 +567,7 @@ while True:
                 robot.move(traprow, trapcol, 50)
             if distance(robot.row, robot.col, robot.destrow, robot.destcol) < 2:
                 robot.dig(robot.destrow, robot.destcol, 50)
+                debug("order57")
                 field[robot.destrow][robot.destcol].Trapput()
         elif robot.item == -1:
             robot.orderpriority = 10
@@ -577,11 +583,12 @@ while True:
                 for candidate_idx in range(len(ore_place)):
                     row, col = ore_place[candidate_idx]
                     dist = distance(robot.row, robot.col, row, col)
-                    if dist < 2 and field[row][col].numofOre > 0 and field[row][col].hasownTrap==False:
+                    if dist < 2 and field[row][col].numofOre > 0 and field[row][col].hasownTrap==False and field[row][col].TrapPossibility==False:
                         robot.dig(row,col, 80)
+                        debug("order58")
                         field[row][col].radardig()
                         if field[row][col].numofOre == 0:
-                            debug("radardig make ore empty")
+                            #debug("radardig make ore empty")
                             ore_place.remove([row, col])
                         break
                     elif robot.orderpriority < 50 - dist // 4 * 2 or (robot.orderpriority == 50 - dist // 4 * 2 and col < robot.destcol):
@@ -601,6 +608,7 @@ while True:
                     dist = distance(robot.row, robot.col, row, col)
                     if dist < 2 and field[row][col].numofOre != 0 and field[row][col].hasownTrap==False:
                         robot.dig(row,col, 35)
+                        debug("order60")
                         was_ore.remove([row,col])
                         break
                     elif robot.orderpriority < 30 - ( dist // 4):
@@ -611,6 +619,7 @@ while True:
                         dist = distance(robot.row, robot.col, row, col)
                         if dist < 2 and field[row][col].numofOre != 0 and field[row][col].hasownTrap==False:
                             robot.dig(row,col, 30)
+                            debug("order62")
                             near_was_ore.remove([row,col])
                             break
                         elif robot.orderpriority < 30 - ( dist // 4):
@@ -619,6 +628,7 @@ while True:
                     for r, c in [[0, 1],[1,0],[0,-1],[-1,0],[0,0]]:
                         if 0<=robot.row+r<15 and 0<=robot.col+c<30 and field[robot.row+r][robot.col+c].numofOre != 0 and field[row][col].hasownTrap==False:
                             robot.dig(robot.row+r, robot.col+c, 20)
+                            debug("order63")
                             break
                     else:
                         robot.move(14,29, 11)
