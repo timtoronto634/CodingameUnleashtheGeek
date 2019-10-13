@@ -246,6 +246,16 @@ class Game(object):
             nextrow, nextcol = robot.row, 1
         return nextrow, nextcol
 
+    def nextplace_to_put_trap(self, trap_place, robot):
+        # put trap if diggedbyme==False and hole==True and hasownTrap==False and ore>2
+        cur_col = 5
+        traprow, trapcol = robot.row, robot.col+1
+        for row, col in trap_place:
+            if col > cur_col:
+                cur_col = col
+                traprow, trapcol = row, col
+        return traprow, trapcol
+                
 """
 priority:
     100 : request radar and put radar when short
@@ -473,11 +483,15 @@ while True:
 
     # for each cell
     ore_place, was_ore, near_was_ore = [], [], []
+    trap_place = []
     for row in range(nrow):
         for col in range(ncol):
             cell = field[row][col]
-            if cell.numofOre > 0 and cell.hasownTrap==False and (cell.diggedbyme or not cell.hole):
-                ore_place.append([row, col])
+            if cell.numofOre > 0 and cell.hasownTrap==False:
+                if cell.diggedbyme or not cell.hole:
+                    ore_place.append([row, col])
+                elif cell.numofOre>1 and cell.diggedbyme==False and cell.hole==True:
+                    trap_place.append([row,col])
             elif cell.numofOre == -1 and cell.wasOre:
                 was_ore.append([row,col])
                 for r, c in [[0, 1],[1,0],[0,-1],[-1,0]]:
@@ -504,17 +518,14 @@ while True:
                     robot.dig(robot.destrow, robot.destcol, 100)
         elif robot.item == 3:
             if robot.orderkind == 'REQUEST':
-                traprow, trapcol = nextplace_to_put_trap(ore_place, robot)
-                if trapcol != 0: robot.move(traprow, trapcol, 50)
+                traprow, trapcol = game.nextplace_to_put_trap(trap_place, robot)
+                if distance(robot.row, robot.col, traprow, trapcol) < 2:
+                    robot.dig(traprow, trapcol, 80)
                 else:
-                    debug("==WARNING==could not find place to put trap", ore_place)
-                    robot.move(robot.row, 1)
-            if field[robot.destrow][robot.destcol].numofOre==0 or field[robot.destrow][robot.destcol].hasownTrap:
-                traprow, trapcol = nextplace_to_put_trap(ore_place, robot)
-                if trapcol != 0: robot.move(traprow, trapcol, 50)
-                else:
-                    debug("==WARNING==could not find place to put trap", ore_place)
-                    robot.move(robot.row, 1)
+                    robot.move(traprow, trapcol, 50)
+            if field[robot.destrow][robot.destcol].numofOre < 2 or field[robot.destrow][robot.destcol].hasownTrap:
+                traprow, trapcol = game.nextplace_to_put_trap(trap_place, robot)
+                robot.move(traprow, trapcol, 50)
             if distance(robot.row, robot.col, robot.destrow, robot.destcol) < 2:
                 robot.dig(robot.destrow, robot.destcol, 50)
                 field[robot.destrow][robot.destcol].Trapput()
@@ -524,10 +535,10 @@ while True:
             if robot.col == 0 and radar_cooldown < 2 and game.shortofRadar and not radar_incharge:
                 robot.request("RADAR", 100)
                 radar_incharge = True
-            # # when need trap
-            # elif robot.col == 0 and len(ore_place) > 3 and trap_cooldown == 0 and (len(game.myTrapplacement) < 3 or turn % 30 == 0) and not trap_incharge:
-            #     robot.request("TRAP", 50)
-            #     trap_incharge = True
+            # when need trap
+            elif robot.col == 0 and len(trap_place) > 4 and trap_cooldown == 0 and turn > 40 and not trap_incharge:
+                robot.request("TRAP", 50)
+                trap_incharge = True
             else:
                 for candidate_idx in range(len(ore_place)):
                     row, col = ore_place[candidate_idx]
