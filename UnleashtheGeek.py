@@ -529,7 +529,6 @@ while True:
             #     robot.request("TRAP", 50)
             #     trap_incharge = True
             else:
-                random.shuffle(ore_place)
                 for candidate_idx in range(len(ore_place)):
                     row, col = ore_place[candidate_idx]
                     dist = distance(robot.row, robot.col, row, col)
@@ -541,6 +540,12 @@ while True:
                             ore_place.remove([row, col])
                         break
                     elif robot.orderpriority < 50 - dist // 4 * 2:
+                        reserve_cnt = 0
+                        for prev_i in range(robot_idx):
+                            if myrobots[prev_i].destrow == row and myrobots[prev_i].destcol == col:
+                                reserve_cnt += 1
+                        if reserve_cnt >= field[row][col].numofOre:
+                            continue
                         robot.move(row, col, 50 - dist // 4 * 2)
 
 
